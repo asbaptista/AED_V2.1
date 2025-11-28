@@ -6,10 +6,10 @@ import java.io.*;
  * Implements the {@link StudentCollection} interface.
  * <p>
  * This class is responsible for managing all {@link Student} objects for an {@link Area}.
- * It maintains two internal lists to satisfy different retrieval requirements:
+ * It maintains two internal structures to satisfy different retrieval requirements:
  * <ol>
  * <li>A {@link SortedMap} (`studentsByName`) to store students sorted
- * **alphabetically by name** using a {@link StudentNameComparator}
+ * **alphabetically by name** using a {@link StudentNameComparator}.
  *.</li>
  * <li>A {@link Map} (`studentsByCountry`) to store students grouped by country.</li>
  * </ol>
@@ -167,6 +167,7 @@ public class StudentsCollectionImpl implements StudentCollection, Serializable {
      * Custom writeObject for optimized serialization.
      * Writes the size and then each student with their name and country keys.
      * This avoids serializing the entire map structure and reduces metadata overhead.
+     * Uses iterator over values() since entrySet() may not be available.
      *
      * @param out The ObjectOutputStream to write to.
      * @throws IOException If an I/O error occurs.
@@ -176,16 +177,20 @@ public class StudentsCollectionImpl implements StudentCollection, Serializable {
         // Write the number of students
         out.writeInt(studentsByName.size());
 
-        // Write each student's name, country, and the student object itself
-        for (Map.Entry<String, Student> entry : studentsByName.entrySet()) {
-            out.writeUTF(entry.getKey()); // lowercase name
-            out.writeUTF(entry.getValue().getCountry().toLowerCase()); // lowercase country
-            out.writeObject(entry.getValue()); // the Student object
+        // Iterate over all students using values() iterator
+        Iterator<Student> studentIterator = studentsByName.values();
+        while (studentIterator.hasNext()) {
+            Student student = studentIterator.next();
+            out.writeUTF(student.getName().toLowerCase()); // lowercase name
+            out.writeUTF(student.getCountry().toLowerCase()); // lowercase country
+            out.writeObject(student); // the Student object
         }
 
         // Write the country map structure (keys and sizes, but not full lists since reconstructible)
         out.writeInt(studentsByCountry.size());
-        for (Map.Entry<String, List<Student>> entry : studentsByCountry.entrySet()) {
+        Iterator<Map.Entry<String, List<Student>>> countryIterator = studentsByCountry.entries();
+        while (countryIterator.hasNext()) {
+            Map.Entry<String, List<Student>> entry = countryIterator.next();
             out.writeUTF(entry.getKey()); // country
             out.writeInt(entry.getValue().size()); // size of list for reconstruction
         }
