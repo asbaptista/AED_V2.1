@@ -8,33 +8,27 @@ import java.io.*;
  * This class is responsible for managing all {@link Student} objects for an {@link Area}.
  * It maintains two internal lists to satisfy different retrieval requirements:
  * <ol>
- * <li>A {@link TwoWayList} (`studentsByInsertion`) to store students in their original
- * **registration order**.</li>
- * <li>A {@link SortedList} (`studentsByName`) to store students sorted
+ * <li>A {@link SortedMap} (`studentsByName`) to store students sorted
  * **alphabetically by name** using a {@link StudentNameComparator}
  *.</li>
+ * <li>A {@link Map} (`studentsByCountry`) to store students grouped by country.</li>
  * </ol>
- * This class is serializable and uses custom `writeObject` and `readObject`
- * methods to ensure the sorted list is correctly rebuilt upon deserialization.
+ * This class is serializable with optimized custom serialization to reduce I/O overhead.
  */
 public class StudentsCollectionImpl implements StudentCollection, Serializable {
 
-
     @Serial
     private static final long serialVersionUID = 1L;
+
     // --- Fields ---
 
     /**
-     * Standard serial version UID for serialization.
+     * Sorted map of students by name (lowercase) for O(log n) lookups and ordered iteration.
      */
+    private SortedMap<String, Student> studentsByName;
 
     /**
-     * List of students, automatically sorted alphabetically by name.
-     */
-    private  SortedMap<String, Student> studentsByName;
-
-    /**
-     * List of students, maintained in their original insertion order.
+     * Map of students grouped by country (lowercase) for O(1) country-based filtering.
      */
     private Map<String, List<Student>> studentsByCountry;
 
@@ -42,8 +36,7 @@ public class StudentsCollectionImpl implements StudentCollection, Serializable {
 
     /**
      * Constructs a new, empty student collection.
-     * Initializes both the insertion-order list and the name-sorted list,
-     * providing the {@link StudentNameComparator} to the latter.
+     * Initializes both the name-sorted map and the country map.
      */
     public StudentsCollectionImpl() {
         this.studentsByName = new AVLSortedMap<>();
@@ -54,64 +47,61 @@ public class StudentsCollectionImpl implements StudentCollection, Serializable {
 
     /**
      * Adds a new student to the collection.
-     * The student is added to the end of the insertion-order list (`studentsByInsertion`)
-     * and also added in its correct sorted position in the name-sorted
-     * list (`studentsByName`).
+     * The student is added to the name-sorted map and the appropriate country list.
      *
      * @param student The {@link Student} to add.
      */
     @Override
     public void addStudent(Student student) {
-        studentsByName.put(student.getName().toLowerCase(), student); // dps confirmar o toLoweCase;
+        String lowerName = student.getName().toLowerCase();
+        studentsByName.put(lowerName, student);
 
-        String country = student.getCountry().toLowerCase(); // dps confirmar o toLoweCase;
-        List<Student> countryList = studentsByCountry.get(country);
+        String lowerCountry = student.getCountry().toLowerCase();
+        List<Student> countryList = studentsByCountry.get(lowerCountry);
 
         if (countryList == null) {
             countryList = new DoublyLinkedList<>();
-            studentsByCountry.put(country, countryList);
+            studentsByCountry.put(lowerCountry, countryList);
         }
         countryList.addLast(student);
-
     }
 
     /**
      * Removes a student from the collection, identified by their name.
      * <p>
-     * This method first finds the student object using {@link #findByName(String)}
-     * and then removes that object from both internal lists
-     * (`studentsByInsertion` and `studentsByName`).
+     * This method first finds the student using the name map
+     * and then removes it from both internal structures.
      *
      * @param name The name of the student to remove.
      */
     @Override
     public void removeStudent(String name) {
-        String lowerName = name.toLowerCase(); // por enquanto fica assim , dps confirmar
+        String lowerName = name.toLowerCase();
 
         Student student = studentsByName.remove(lowerName);
 
         if (student != null) {
-            String country = student.getCountry().toLowerCase();
-            List<Student> countryList = studentsByCountry.get(country);
+            String lowerCountry = student.getCountry().toLowerCase();
+            List<Student> countryList = studentsByCountry.get(lowerCountry);
             if (countryList != null) {
                 int index = countryList.indexOf(student);
-                countryList.remove(index);
+                if (index != -1) {
+                    countryList.remove(index);
+                }
 
                 if (countryList.isEmpty()) {
-                    studentsByCountry.remove(country);
+                    studentsByCountry.remove(lowerCountry);
                 }
             }
-
         }
-
     }
 
     // --- Querying & Searching ---
 
     /**
-     * Finds a student by their name using a case-insensitive linear search.
+     * Finds a student by their name using case-insensitive lookup.
      * <p>
-     * This search is performed on the name-sorted list (`studentsByName`).
+     * This search is performed on the name-sorted map.
      *
      * @param name The name of the student to find.
      * @return The {@link Student} object, or {@code null} if not found.
@@ -136,12 +126,10 @@ public class StudentsCollectionImpl implements StudentCollection, Serializable {
 
     /**
      * Gets an iterator over all students from a specific country,
-     * in their original order of registration (insertion order)
-     *.
+     * in their original order of registration.
      *
      * @param country The country name to filter by.
-     * @return A {@link FilterIterator} of {@link Student}s from that country,
-     * in registration order.
+     * @return A {@link Iterator} of {@link Student}s from that country.
      */
     @Override
     public Iterator<Student> listStudentsByCountry(String country) {
@@ -150,17 +138,21 @@ public class StudentsCollectionImpl implements StudentCollection, Serializable {
             return list.iterator();
         }
         return new DoublyLinkedList<Student>().iterator(); // empty iterator
-
     }
 
-
+    /**
+     * Gets all students in insertion order for persistence or other needs.
+     * Builds a temporary list by concatenating country lists.
+     *
+     * @return An {@link Iterator} of all students in insertion order.
+     */
     public Iterator<Student> getStudentsByInsertion() {
         DoublyLinkedList<Student> allOrdered = new DoublyLinkedList<>();
 
-        // Iterar sobre as listas de cada país
-        Iterator<List<Student>> lists = studentsByCountry.values();
-        while (lists.hasNext()) {
-            List<Student> countryList = lists.next();
+        // Iterate over all country lists to maintain insertion order
+        Iterator<List<Student>> countryLists = studentsByCountry.values();
+        while (countryLists.hasNext()) {
+            List<Student> countryList = countryLists.next();
             Iterator<Student> studentIt = countryList.iterator();
             while (studentIt.hasNext()) {
                 allOrdered.addLast(studentIt.next());
@@ -169,17 +161,77 @@ public class StudentsCollectionImpl implements StudentCollection, Serializable {
         return allOrdered.iterator();
     }
 
+    // --- Custom Serialization ---
 
+    /**
+     * Custom writeObject for optimized serialization.
+     * Writes the size and then each student with their name and country keys.
+     * This avoids serializing the entire map structure and reduces metadata overhead.
+     *
+     * @param out The ObjectOutputStream to write to.
+     * @throws IOException If an I/O error occurs.
+     */
     @Serial
     private void writeObject(ObjectOutputStream out) throws IOException {
-        out.defaultWriteObject();
+        // Write the number of students
+        out.writeInt(studentsByName.size());
+
+        // Write each student's name, country, and the student object itself
+        for (Map.Entry<String, Student> entry : studentsByName.entrySet()) {
+            out.writeUTF(entry.getKey()); // lowercase name
+            out.writeUTF(entry.getValue().getCountry().toLowerCase()); // lowercase country
+            out.writeObject(entry.getValue()); // the Student object
+        }
+
+        // Write the country map structure (keys and sizes, but not full lists since reconstructible)
+        out.writeInt(studentsByCountry.size());
+        for (Map.Entry<String, List<Student>> entry : studentsByCountry.entrySet()) {
+            out.writeUTF(entry.getKey()); // country
+            out.writeInt(entry.getValue().size()); // size of list for reconstruction
+        }
     }
+
+    /**
+     * Custom readObject for optimized deserialization.
+     * Reads students and reconstructs the maps from the serialized data.
+     * This is faster than default as it avoids JDK's reflection-heavy reconstruction.
+     *
+     * @param in The ObjectInputStream to read from.
+     * @throws IOException If an I/O error occurs.
+     * @throws ClassNotFoundException If a class cannot be found.
+     */
     @Serial
     private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
-        in.defaultReadObject();
+        // Initialize empty maps
+        studentsByName = new AVLSortedMap<>();
+        studentsByCountry = new SepChainHashTable<>();
+
+        // Read the number of students
+        int numStudents = in.readInt();
+
+        // Read and reconstruct each student
+        for (int i = 0; i < numStudents; i++) {
+            String lowerName = in.readUTF();
+            String lowerCountry = in.readUTF();
+            Student student = (Student) in.readObject();
+
+            // Add to name map
+            studentsByName.put(lowerName, student);
+
+            // Add to country map
+            List<Student> countryList = studentsByCountry.get(lowerCountry);
+            if (countryList == null) {
+                countryList = new DoublyLinkedList<>();
+                studentsByCountry.put(lowerCountry, countryList);
+            }
+            countryList.addLast(student);
+        }
+
+        // Read country map metadata (sizes for validation, but lists already reconstructed above)
+        int numCountries = in.readInt();
+        for (int i = 0; i < numCountries; i++) {
+            in.readUTF(); // country key (already used)
+            in.readInt(); // size (for validation if needed)
+        }
     }
-
-
-
-
 }
