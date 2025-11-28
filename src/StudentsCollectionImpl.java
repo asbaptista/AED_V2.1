@@ -167,7 +167,7 @@ public class StudentsCollectionImpl implements StudentCollection, Serializable {
      * Custom writeObject for optimized serialization.
      * Writes the size and then each student with their name and country keys.
      * This avoids serializing the entire map structure and reduces metadata overhead.
-     * Uses iterator over values() since entrySet() may not be available.
+     * Uses keys() and get() since entrySet() and entries() may not be available.
      *
      * @param out The ObjectOutputStream to write to.
      * @throws IOException If an I/O error occurs.
@@ -177,22 +177,24 @@ public class StudentsCollectionImpl implements StudentCollection, Serializable {
         // Write the number of students
         out.writeInt(studentsByName.size());
 
-        // Iterate over all students using values() iterator
-        Iterator<Student> studentIterator = studentsByName.values();
-        while (studentIterator.hasNext()) {
-            Student student = studentIterator.next();
-            out.writeUTF(student.getName().toLowerCase()); // lowercase name
+        // Iterate over all students using keys() + get()
+        Iterator<String> nameKeys = studentsByName.keys();
+        while (nameKeys.hasNext()) {
+            String lowerName = nameKeys.next();
+            Student student = studentsByName.get(lowerName);
+            out.writeUTF(lowerName); // lowercase name
             out.writeUTF(student.getCountry().toLowerCase()); // lowercase country
             out.writeObject(student); // the Student object
         }
 
-        // Write the country map structure (keys and sizes, but not full lists since reconstructible)
+        // Write the country map structure using keys() + get() (sizes for validation)
+        Iterator<String> countryKeys = studentsByCountry.keys();
         out.writeInt(studentsByCountry.size());
-        Iterator<Map.Entry<String, List<Student>>> countryIterator = studentsByCountry.entries();
-        while (countryIterator.hasNext()) {
-            Map.Entry<String, List<Student>> entry = countryIterator.next();
-            out.writeUTF(entry.getKey()); // country
-            out.writeInt(entry.getValue().size()); // size of list for reconstruction
+        while (countryKeys.hasNext()) {
+            String country = countryKeys.next();
+            List<Student> countryList = studentsByCountry.get(country);
+            out.writeUTF(country); // country key
+            out.writeInt(countryList != null ? countryList.size() : 0); // size
         }
     }
 
